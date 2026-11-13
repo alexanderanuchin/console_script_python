@@ -1,0 +1,2 @@
+# Development tools only: the script itself uses just the standard library.
+pytest==9.2.0

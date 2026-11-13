@@ -1,0 +1,7 @@
+# Tool settings only. The script needs nothing but Python 3.12+;
+# development tools are listed in requirements-dev.txt.
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = ["."]
+filterwarnings = ["error"]
