@@ -9,6 +9,7 @@ downloaded data and the download speed. Only the standard library is used.
 import argparse
 import http.client
 import math
+import ssl
 import string
 import sys
 import time
@@ -52,12 +53,16 @@ class Summary:
     megabits_per_second: float
 
 
-def download(url: str, timeout: float) -> Download:
+def download(
+    url: str, timeout: float, context: ssl.SSLContext | None = None
+) -> Download:
     """Send one GET request and read the whole response body in chunks."""
     request = urllib.request.Request(url, headers=REQUEST_HEADERS)
     started = time.perf_counter()  # monotonic clock with high resolution
     try:
-        with urllib.request.urlopen(request, timeout=timeout) as response:
+        with urllib.request.urlopen(
+            request, timeout=timeout, context=context
+        ) as response:
             size = 0
             while chunk := response.read(CHUNK_SIZE):
                 size += len(chunk)
@@ -172,12 +177,15 @@ def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
 
 def main(argv: Sequence[str] | None = None) -> int:
     args = parse_args(argv)
+    # One TLS context for the whole series: otherwise urllib loads the CA
+    # certificates again for every HTTPS request, inside the measured time.
+    context = ssl.create_default_context()
     print(f"Downloading {args.url} {REQUEST_COUNT} times in a row")
 
     downloads: list[Download] = []
     try:
         for number in range(1, REQUEST_COUNT + 1):
-            result = download(args.url, args.timeout)
+            result = download(args.url, args.timeout, context)
             downloads.append(result)
             print(
                 f"  request {number:2}/{REQUEST_COUNT}: "

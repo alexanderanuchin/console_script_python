@@ -115,7 +115,7 @@ def test_download_time_covers_request_and_whole_body(monkeypatch):
             clock[0] += 0.25  # each read takes a quarter of a second
             return super().read(size)
 
-    def fake_urlopen(request, timeout):
+    def fake_urlopen(request, timeout, context=None):
         clock[0] += 1.0  # connecting and waiting for the headers
         return SlowResponse(body)
 
@@ -132,7 +132,7 @@ def test_series_is_sequential_and_reads_bodies_in_chunks(monkeypatch, capsys):
     body = b"x" * (3 * CHUNK_SIZE + 123)
     responses: list[FakeResponse] = []
 
-    def fake_urlopen(request, timeout):
+    def fake_urlopen(request, timeout, context=None):
         # The previous response must be read to the end and closed first.
         assert all(r.read_to_end and r.closed for r in responses)
         responses.append(FakeResponse(body))
