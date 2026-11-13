@@ -54,7 +54,9 @@ class Handler(http.server.BaseHTTPRequestHandler):
         pass  # keep the test output clean
 
 
-def send_body(handler: Handler, body: bytes = BODY, length: int | None = None) -> None:
+def send_body(
+    handler: Handler, body: bytes = BODY, length: int | str | None = None
+) -> None:
     handler.send_response(200)
     handler.send_header("Content-Length", str(len(body) if length is None else length))
     handler.end_headers()
@@ -203,6 +205,12 @@ def test_body_shorter_than_content_length_is_an_error(server, capsys):
 
     err = capsys.readouterr().err
     assert f"connection closed after 1000 of {len(BODY)} bytes" in err
+
+
+def test_malformed_content_length_is_ignored(server):
+    server.respond = lambda handler: send_body(handler, length="²")  # "²"
+
+    assert main([server.url]) == 0
 
 
 def test_timeout(server, capsys):

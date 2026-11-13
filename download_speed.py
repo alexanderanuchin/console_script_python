@@ -62,7 +62,7 @@ def download(url: str, timeout: float) -> Download:
             while chunk := response.read(CHUNK_SIZE):
                 size += len(chunk)
             seconds = time.perf_counter() - started
-            declared = response.headers.get("Content-Length")
+            declared = response.headers.get("Content-Length", "").strip()
     except urllib.error.HTTPError as error:
         error.close()  # release the connection held by the error response
         raise DownloadError(f"HTTP {error.code} {error.reason}") from error
@@ -72,7 +72,8 @@ def download(url: str, timeout: float) -> Download:
 
     # If the connection breaks early, read() returns b"" instead of raising,
     # so compare the bytes read with the size announced by the server.
-    if declared is not None and declared.isdigit() and int(declared) != size:
+    # A missing or malformed value is ignored, as http.client itself does.
+    if declared.isdecimal() and int(declared) != size:
         raise DownloadError(f"connection closed after {size} of {declared} bytes")
     return Download(size, seconds)
 
