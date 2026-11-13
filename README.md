@@ -16,8 +16,8 @@ python3 download_speed.py --help
 
 На Windows вместо `python3` используйте `py` или `python`.
 
-- `URL` — адрес `http://` или `https://`, например тяжёлой картинки или тестового файла. Чем больше файл, тем точнее результат, лучше от 10 МБ.
-- `--timeout SECONDS` — тайм-аут в секундах, по умолчанию 10, не больше 3600. Он ограничивает установку соединения и каждое ожидание очередной порции данных, но не длительность всего скачивания.
+- `URL` — адрес `http://` или `https://`, например тяжёлой картинки или тестового файла. Чем больше файл, тем точнее результат, лучше от 10 МБ. Пробелы и кириллицу в пути скрипт кодирует сам, как браузер (percent-encoding). Домен на кириллице нужно указать в punycode (`xn--...`).
+- `--timeout SECONDS` — тайм-аут в секундах, по умолчанию 10, не больше 3600. Он ограничивает установку соединения и каждое ожидание очередной порции данных. DNS-запрос и длительность всего скачивания он не ограничивает.
 
 ## Пример вывода
 
@@ -26,31 +26,33 @@ python3 download_speed.py --help
 ```text
 $ python3 download_speed.py https://files.pythonhosted.org/packages/60/e7/0e07379944aa8afb49a556a2b54587b828eb41dc9adc56fb7615b678ca53/numpy-2.3.4-cp311-cp311-macosx_10_9_x86_64.whl
 Downloading https://files.pythonhosted.org/packages/60/e7/0e07379944aa8afb49a556a2b54587b828eb41dc9adc56fb7615b678ca53/numpy-2.3.4-cp311-cp311-macosx_10_9_x86_64.whl 10 times in a row
-  request  1/10: 21259519 bytes in 11.851 s
-  request  2/10: 21259519 bytes in 5.162 s
-  request  3/10: 21259519 bytes in 0.635 s
-  request  4/10: 21259519 bytes in 13.031 s
-  request  5/10: 21259519 bytes in 1.493 s
-  request  6/10: 21259519 bytes in 0.188 s
-  request  7/10: 21259519 bytes in 12.802 s
-  request  8/10: 21259519 bytes in 0.533 s
-  request  9/10: 21259519 bytes in 8.642 s
-  request 10/10: 21259519 bytes in 0.123 s
+  request  1/10: 21259519 bytes in 0.810 s
+  request  2/10: 21259519 bytes in 3.097 s
+  request  3/10: 21259519 bytes in 5.197 s
+  request  4/10: 21259519 bytes in 26.218 s
+  request  5/10: 21259519 bytes in 7.344 s
+  request  6/10: 21259519 bytes in 1.035 s
+  request  7/10: 21259519 bytes in 0.958 s
+  request  8/10: 21259519 bytes in 3.691 s
+  request  9/10: 21259519 bytes in 2.057 s
+  request 10/10: 21259519 bytes in 0.259 s
 
-Average request time: 5.446 s
+Average request time: 5.066 s
 Total downloaded:     212595190 bytes (202.75 MiB)
-Download speed:       3.72 MiB/s (31.23 Mbit/s)
+Download speed:       4.00 MiB/s (33.57 Mbit/s)
 ```
 
 Время отдельных запросов сильно различается: в общей сети и на CDN это обычное дело, поэтому результат считается по всей серии.
 
 ## Что и как измеряется
 
-- Выполняется ровно 10 GET-запросов строго последовательно: следующий начинается только после того, как тело предыдущего ответа прочитано до конца. Прогрева и повторных попыток нет.
+- Выполняется ровно 10 скачиваний строго последовательно: следующее начинается только после того, как тело предыдущего ответа прочитано до конца. Прогрева и повторных попыток нет.
+- Одно скачивание — это GET-запрос и чтение ответа. Перенаправления (3xx) выполняются внутри него автоматически, их время входит во время запроса.
 - Время запроса измеряется монотонным таймером `time.perf_counter()` от начала запроса (включая DNS и установку соединения) до чтения последнего байта тела ответа.
 - Тело читается блоками по 64 КиБ и в памяти не накапливается. Объём — сумма фактически прочитанных байтов тела, без HTTP-заголовков.
+- Если сервер объявил размер в `Content-Length`, прочитанный объём сверяется с ним: при чтении блоками `http.client` не сообщает об обрыве соединения сам.
 - Скрипт отправляет `Accept-Encoding: identity`, чтобы сервер не сжимал ответ.
-- Перенаправления (3xx) выполняются автоматически, их время входит во время запроса.
+- TLS-контекст создаётся один раз на всю серию, чтобы загрузка сертификатов не попадала в замер. TLS-рукопожатие при этом входит в каждый запрос.
 
 | Величина | Формула | Единицы |
 |---|---|---|
@@ -72,13 +74,14 @@ Download speed:       3.72 MiB/s (31.23 Mbit/s)
 | Успешный замер | — | 0 |
 | HTTP-статус 4xx или 5xx | `error: request 1/10 failed: HTTP 404 Not Found` | 1 |
 | Нет соединения: DNS, отказ, TLS-сертификат | `error: request 1/10 failed: [Errno 111] Connection refused` | 1 |
-| Тайм-аут | `error: request 3/10 failed: timed out: no response for 10 s` | 1 |
+| Тайм-аут | `error: request 3/10 failed: timed out: no data for 10 s` | 1 |
 | Обрыв: тело короче, чем объявлено в `Content-Length` | `error: request 2/10 failed: connection closed after 1000 of 262144 bytes` | 1 |
+| Обрыв ответа с chunked-кодированием | `error: request 2/10 failed: connection closed before the whole body was received` | 1 |
 | Все ответы пустые | `error: all responses were empty, there is nothing to measure` | 1 |
-| Неверный URL или `--timeout` | `error: argument url: invalid URL 'example.com': expected http://host/... or https://host/...` | 2 |
+| Неверный URL или `--timeout` | `download_speed.py: error: argument url: invalid URL 'example.com': expected http://host/... or https://host/...` | 2 |
 | Прерывание по Ctrl+C | `interrupted: no result after 4 of 10 downloads` | 130 |
 
-После ошибки запроса выводится ещё строка `no result: the series stopped after N of 10 downloads`.
+После ошибки запроса выводится ещё строка `no result: the series stopped after N of 10 downloads`. Перед сообщением о неверном аргументе печатается строка `usage`.
 
 ## Ограничения замера
 
@@ -87,21 +90,22 @@ Download speed:       3.72 MiB/s (31.23 Mbit/s)
 - Прогрева нет, поэтому первый запрос может быть медленнее остальных.
 - Скачивание идёт в один поток. Сервисы вроде speedtest.net используют несколько параллельных соединений и обычно показывают больше.
 - Учитываются только байты тела ответа, без HTTP-заголовков и служебных данных TCP и TLS.
-- Если заданы переменные окружения `HTTP_PROXY` или `HTTPS_PROXY`, запросы идут через прокси.
+- Если сервер не указал `Content-Length` и не использует chunked-кодирование, конец ответа определяется по закрытию соединения. Тогда обрыв не отличить от нормального завершения, и неполный ответ будет посчитан как полный.
+- Используются системные настройки прокси: переменные `HTTP_PROXY` и `HTTPS_PROXY`, а на Windows и macOS ещё и настройки системы. Если прокси задан, замер идёт через него.
 
 ## Разработка и проверки
 
 ```bash
 python3 -m venv .venv
-source .venv/bin/activate          # Windows: .venv\Scripts\activate
+source .venv/bin/activate            # Windows: .venv\Scripts\activate
 pip install -r requirements-dev.txt  # pytest и Ruff, для запуска скрипта не нужны
 
-python -m pytest                   # тесты, интернет не нужен
-ruff check .                       # линтер
-ruff format --check .              # проверка форматирования
+python -m pytest                     # тесты, интернет не нужен
+ruff check .                         # линтер
+ruff format --check .                # проверка форматирования
 ```
 
-Тесты поднимают локальный HTTP-сервер на 127.0.0.1 или подменяют `urlopen`. Они проверяют формулы, ровно 10 последовательных запросов, чтение тела блоками до конца, измерение времени, отсутствие повторных попыток и основные ошибки.
+Тесты поднимают локальный HTTP-сервер на 127.0.0.1 или подменяют `urlopen`. Они проверяют формулы, ровно 10 последовательных запросов, чтение тела блоками до конца, границы замера времени, отсутствие повторных попыток, обрывы, тайм-аут, Ctrl+C и неверные аргументы.
 
 Ручная проверка CLI на локальном сервере (Linux или macOS):
 
