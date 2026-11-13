@@ -244,6 +244,8 @@ def test_empty_responses_are_an_error(server, capsys):
         ["ftp://example.com/file.bin"],
         ["http://"],
         ["http://example.com:99999/file.bin"],
+        ["http://example..com/file.bin"],
+        ["http://пример.рф/file.bin"],
         ["http://example.com/file.bin", "--timeout", "0"],
         ["http://example.com/file.bin", "--timeout", "abc"],
     ],
@@ -254,6 +256,12 @@ def test_invalid_arguments_exit_with_code_2(args, capsys):
 
     assert exit_info.value.code == 2
     assert "error:" in capsys.readouterr().err
+
+
+def test_url_with_spaces_and_non_ascii_path_is_percent_encoded():
+    url = download_speed.http_url("http://example.com/фото 1.jpg?size=big")
+
+    assert url == "http://example.com/%D1%84%D0%BE%D1%82%D0%BE%201.jpg?size=big"
 
 
 def test_help(capsys):

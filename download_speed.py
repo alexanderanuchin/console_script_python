@@ -9,6 +9,7 @@ downloaded data and the download speed. Only the standard library is used.
 import argparse
 import http.client
 import math
+import string
 import sys
 import time
 import urllib.error
@@ -65,7 +66,8 @@ def download(url: str, timeout: float) -> Download:
     except urllib.error.HTTPError as error:
         error.close()  # release the connection held by the error response
         raise DownloadError(f"HTTP {error.code} {error.reason}") from error
-    except (OSError, http.client.HTTPException) as error:
+    except (OSError, http.client.HTTPException, ValueError) as error:
+        # ValueError comes from urllib too, e.g. on a redirect to a bad host name.
         raise DownloadError(describe_error(error, timeout)) from error
 
     # If the connection breaks early, read() returns b"" instead of raising,
@@ -99,7 +101,7 @@ def summarize(downloads: Sequence[Download]) -> Summary:
 
 
 def http_url(value: str) -> str:
-    """Argument type for the URL: only absolute http(s) URLs are accepted."""
+    """Argument type for the URL: check it and return it in ASCII form."""
     try:
         parts = urllib.parse.urlsplit(value)
         _ = parts.port  # raises ValueError for a malformed or out-of-range port
@@ -109,7 +111,18 @@ def http_url(value: str) -> str:
         raise argparse.ArgumentTypeError(
             f"invalid URL {value!r}: expected http://host/... or https://host/..."
         )
-    return value
+    if not parts.hostname.isascii():
+        raise argparse.ArgumentTypeError(
+            f"invalid URL {value!r}: write the domain name in punycode (xn--...)"
+        )
+    try:
+        parts.hostname.encode("idna")  # fails if a part of the name is empty or long
+    except UnicodeError:
+        raise argparse.ArgumentTypeError(
+            f"invalid URL {value!r}: malformed host name {parts.hostname!r}"
+        ) from None
+    # Percent-encode spaces and non-ASCII characters, as browsers do.
+    return urllib.parse.quote(value, safe=string.punctuation)
 
 
 def timeout_seconds(value: str) -> float:
