@@ -222,7 +222,7 @@ def test_timeout(server, capsys):
 
     assert main([server.url, "--timeout", "0.1"]) == 1
 
-    assert "timed out: no response for 0.1 s" in capsys.readouterr().err
+    assert "timed out: no data for 0.1 s" in capsys.readouterr().err
 
 
 def test_connection_refused(capsys):

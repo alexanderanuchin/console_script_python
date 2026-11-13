@@ -87,7 +87,7 @@ def describe_error(error: Exception, timeout: float) -> str:
     """Return a short human-readable reason for a failed request."""
     reason = error.reason if isinstance(error, urllib.error.URLError) else error
     if isinstance(reason, TimeoutError):
-        return f"timed out: no response for {timeout:g} s"
+        return f"timed out: no data for {timeout:g} s"
     if isinstance(reason, http.client.IncompleteRead):
         return "connection closed before the whole body was received"
     return str(reason) or type(reason).__name__
@@ -155,7 +155,7 @@ def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
             f"Speed = total bytes / total time of the {REQUEST_COUNT} requests, "
             "shown in MiB/s (1 MiB = 1048576 bytes) and Mbit/s "
             "(1 Mbit = 1000000 bits). Exit status: 0 on success, 1 if a request "
-            "fails, 2 on invalid arguments."
+            "fails, 2 on invalid arguments, 130 if interrupted with Ctrl+C."
         ),
     )
     parser.add_argument(
@@ -169,8 +169,9 @@ def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
         type=timeout_seconds,
         default=DEFAULT_TIMEOUT,
         metavar="SECONDS",
-        help="limit for connecting and for each wait for data, not for the whole "
-        f"download (default: %(default)g, at most {MAX_TIMEOUT:g})",
+        help="limit for connecting and for each wait for data; it does not cover "
+        "the DNS lookup or the whole download "
+        f"(default: %(default)g, at most {MAX_TIMEOUT:g})",
     )
     return parser.parse_args(argv)
 
