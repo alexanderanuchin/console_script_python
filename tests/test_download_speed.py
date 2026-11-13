@@ -48,6 +48,7 @@ class Handler(http.server.BaseHTTPRequestHandler):
 
     def do_GET(self) -> None:
         self.server.requests += 1
+        self.server.accept_encodings.append(self.headers["Accept-Encoding"])
         self.server.respond(self)
 
     def log_message(self, format: str, *args: object) -> None:
@@ -75,6 +76,7 @@ def server():
     httpd = http.server.HTTPServer(("127.0.0.1", 0), Handler)
     httpd.handle_error = lambda request, address: None  # clients may hang up early
     httpd.requests = 0
+    httpd.accept_encodings = []
     httpd.respond = send_body
     httpd.url = f"http://127.0.0.1:{httpd.server_port}/file.bin"
     thread = threading.Thread(
@@ -167,6 +169,7 @@ def test_cli_downloads_ten_times_and_prints_speed(server):
     assert "Average request time:" in result.stdout
     assert "MiB/s" in result.stdout
     assert result.stderr == ""
+    assert server.accept_encodings == ["identity"] * 10  # no compression
 
 
 def test_http_error_stops_without_retries(server, capsys):
@@ -198,6 +201,24 @@ def test_failure_in_the_middle_gives_no_result(server, capsys):
     assert "no result: the series stopped after 3 of 10 downloads" in err
 
 
+def test_ctrl_c_gives_no_result(monkeypatch, capsys):
+    calls = []
+
+    def fake_download(url, timeout, context=None):
+        calls.append(url)
+        if len(calls) == 4:
+            raise KeyboardInterrupt
+        return Download(1000, 0.1)
+
+    monkeypatch.setattr(download_speed, "download", fake_download)
+
+    assert main(["http://example.test/file"]) == 130
+
+    out, err = capsys.readouterr()
+    assert "Download speed" not in out
+    assert "interrupted: no result after 3 of 10 downloads" in err
+
+
 def test_body_shorter_than_content_length_is_an_error(server, capsys):
     server.respond = lambda handler: send_body(handler, BODY[:1000], len(BODY))
 
@@ -207,8 +228,24 @@ def test_body_shorter_than_content_length_is_an_error(server, capsys):
     assert f"connection closed after 1000 of {len(BODY)} bytes" in err
 
 
+def test_chunked_body_cut_short_is_an_error(server, capsys):
+    def respond(handler: Handler) -> None:
+        handler.send_response(200)
+        handler.send_header("Transfer-Encoding", "chunked")
+        handler.end_headers()
+        handler.wfile.write(b"400\r\n" + b"x" * 100)  # announces 1024 bytes
+
+    server.respond = respond
+
+    assert main([server.url]) == 1
+
+    err = capsys.readouterr().err
+    assert "connection closed before the whole body was received" in err
+
+
 def test_malformed_content_length_is_ignored(server):
-    server.respond = lambda handler: send_body(handler, length="²")  # "²"
+    # "²".isdigit() is True, but int("²") fails; http.client ignores the value.
+    server.respond = lambda handler: send_body(handler, length="²")
 
     assert main([server.url]) == 0
 
@@ -255,6 +292,7 @@ def test_empty_responses_are_an_error(server, capsys):
         ["http://example..com/file.bin"],
         ["http://пример.рф/file.bin"],
         ["http://example.com/file.bin", "--timeout", "0"],
+        ["http://example.com/file.bin", "--timeout", "3601"],
         ["http://example.com/file.bin", "--timeout", "abc"],
     ],
 )
